@@ -1,0 +1,270 @@
+const $ = id => document.getElementById(id);
+
+let icannTlds = [];
+
+async function api(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    }
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Request failed');
+  }
+
+  return data;
+}
+
+function normalizeTld(value) {
+  const tld = value.trim().toLowerCase().replace(/^\./, '');
+
+  if (
+    !tld ||
+    tld.length > 63 ||
+    tld.includes('.') ||
+    !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(tld)
+  ) {
+    throw new Error(`Invalid TLD: ${value}`);
+  }
+
+  return tld;
+}
+
+function renderTlds() {
+  const list = $('icann-tld-list');
+  list.replaceChildren();
+
+  $('tld-count').textContent = icannTlds.length;
+
+  if (!icannTlds.length) {
+    const item = document.createElement('li');
+    item.textContent = 'No ICANN TLDs configured.';
+    list.append(item);
+    return;
+  }
+
+  for (const tld of icannTlds) {
+    const item = document.createElement('li');
+
+    const name = document.createElement('span');
+    name.textContent = `.${tld}`;
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'Remove';
+
+    remove.addEventListener('click', () => {
+      icannTlds = icannTlds.filter(value => value !== tld);
+      renderTlds();
+    });
+
+    item.append(name, remove);
+    list.append(item);
+  }
+}
+
+async function loadSettings() {
+  try {
+    const settings = await api('/api/settings');
+
+    $('primary').value = settings.primary;
+
+    icannTlds = Array.isArray(settings.icannTlds)
+      ? settings.icannTlds
+      : [];
+
+    renderTlds();
+
+    $('active-resolver').textContent = settings.primary;
+  } catch (error) {
+    $('trust-save-result').textContent = error.message;
+  }
+}
+
+function addTld(value) {
+  const tld = normalizeTld(value);
+
+  if (icannTlds.includes(tld)) {
+    return false;
+  }
+
+  icannTlds.push(tld);
+  return true;
+}
+
+$('add-tld').addEventListener('click', () => {
+  try {
+    const added = addTld($('icann-tld').value);
+
+    if (!added) {
+      throw new Error('TLD already exists');
+    }
+
+    icannTlds.sort();
+    $('icann-tld').value = '';
+    $('domain-error').textContent = '';
+
+    renderTlds();
+  } catch (error) {
+    $('domain-error').textContent = error.message;
+  }
+});
+
+$('icann-tld').addEventListener('keydown', event => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    $('add-tld').click();
+  }
+});
+
+$('import-tlds').addEventListener('click', () => {
+  const values = $('bulk-tlds').value
+    .split(/[\s,;]+/)
+    .filter(Boolean);
+
+  let added = 0;
+  let duplicates = 0;
+  const invalid = [];
+
+  for (const value of values) {
+    try {
+      if (addTld(value)) {
+        added++;
+      } else {
+        duplicates++;
+      }
+    } catch {
+      invalid.push(value);
+    }
+  }
+
+  icannTlds.sort();
+  renderTlds();
+
+  $('import-result').textContent =
+    `Imported: ${added} | Duplicates: ${duplicates} | Invalid: ${invalid.length}`;
+
+  $('domain-error').textContent = invalid.length
+    ? `Invalid entries: ${invalid.join(', ')}`
+    : '';
+});
+
+$('clear-bulk').addEventListener('click', () => {
+  $('bulk-tlds').value = '';
+  $('import-result').textContent = '';
+  $('domain-error').textContent = '';
+});
+
+$('remove-all-tlds').addEventListener('click', () => {
+  if (!confirm('Remove all configured ICANN TLDs?')) return;
+
+  icannTlds = [];
+  renderTlds();
+});
+
+async function testResolver(server, output) {
+  $(output).textContent = 'Testing...';
+
+  try {
+    const result = await api('/api/resolvers/test', {
+      method: 'POST',
+      body: JSON.stringify({ server })
+    });
+
+    $(output).textContent = result.ok
+      ? `✓ Responding (${result.answers.length} answers)`
+      : `Failed: ${result.responseCode}`;
+
+    $(output).className = result.ok
+      ? 'result success'
+      : 'result failure';
+  } catch (error) {
+    $(output).textContent = `✗ ${error.message}`;
+    $(output).className = 'result failure';
+  }
+}
+
+$('test-primary').addEventListener('click', () => {
+  testResolver(
+    $('primary').value.trim(),
+    'primary-result'
+  );
+});
+
+$('save-settings').addEventListener('click', async () => {
+  $('trust-save-result').textContent = 'Saving...';
+
+  try {
+    const result = await api('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        primary: $('primary').value.trim(),
+        secondary: '',
+        useSecondary: false,
+        icannTlds
+      })
+    });
+
+    icannTlds = result.settings.icannTlds;
+
+    renderTlds();
+
+    $('trust-save-result').textContent =
+      `✓ Saved ${icannTlds.length} ICANN TLDs successfully`;
+
+    $('active-resolver').textContent = result.settings.primary;
+  } catch (error) {
+    $('trust-save-result').textContent = `✗ ${error.message}`;
+  }
+});
+
+async function loadStatus() {
+  try {
+    const data = await api('/api/status');
+
+    $('proxy-status').textContent = data.proxy.status;
+    $('proxy-address').textContent = data.proxy.address;
+    $('ca-status').textContent = data.ca.ready ? 'Ready' : 'Not ready';
+
+    $('active-resolver').textContent =
+      data.resolver.active ||
+      data.resolver.primary ||
+      'Awaiting DNS query';
+
+    if (data.ca.ready) {
+      const info = data.ca;
+      const dl = $('ca-info');
+
+      dl.replaceChildren();
+
+      const fields = [
+        ['Subject', info.subject],
+        ['Issuer', info.issuer],
+        ['Valid until', new Date(info.notAfter).toLocaleDateString()],
+        ['Fingerprint', info.fingerprint]
+      ];
+
+      for (const [name, value] of fields) {
+        const dt = document.createElement('dt');
+        const dd = document.createElement('dd');
+
+        dt.textContent = name;
+        dd.textContent = value || '';
+
+        dl.append(dt, dd);
+      }
+    }
+  } catch (error) {
+    $('overall-status').textContent = 'Dashboard error';
+    console.error(error);
+  }
+}
+
+loadSettings();
+loadStatus();
+setInterval(loadStatus, 10000);

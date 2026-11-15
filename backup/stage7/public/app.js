@@ -1,0 +1,130 @@
+const $ = id => document.getElementById(id);
+
+async function loadStatus() {
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    $('proxy-status').textContent = data.proxy.status === 'active' ? 'Active' : 'Stopped';
+    $('proxy-address').textContent = data.proxy.address;
+    $('ca-status').textContent = data.ca.ready ? 'Ready' : 'Not ready';
+    $('active-resolver').textContent = data.resolver?.active || data.resolver?.primary || 'Not selected';
+
+    if (data.ca.ready) {
+      $('ca-info').innerHTML = `
+        <dt>Subject</dt><dd>${data.ca.subject}</dd>
+        <dt>Issuer</dt><dd>${data.ca.issuer}</dd>
+        <dt>Valid from</dt><dd>${new Date(data.ca.notBefore).toLocaleDateString()}</dd>
+        <dt>Valid until</dt><dd>${new Date(data.ca.notAfter).toLocaleDateString()}</dd>
+        <dt>SHA-256 fingerprint</dt><dd>${data.ca.fingerprint}</dd>
+      `;
+    }
+  } catch (err) {
+    console.error('status', err);
+  }
+}
+
+async function loadSettings() {
+  const res = await fetch('/api/settings');
+  const s = await res.json();
+  $('primary').value = s.primary || '';
+  $('secondary').value = s.secondary || '';
+  $('useSecondary').checked = !!s.useSecondary;
+  renderTlds(s.icannTlds || []);
+}
+
+let tlds = [];
+function renderTlds(list) {
+  tlds = [...list].sort();
+  const ul = $('icann-tld-list');
+  ul.innerHTML = '';
+  for (const tld of tlds) {
+    const li = document.createElement('li');
+    li.textContent = tld;
+    const btn = document.createElement('button');
+    btn.textContent = 'Remove';
+    btn.className = 'remove';
+    btn.onclick = () => {
+      tlds = tlds.filter(t => t !== tld);
+      renderTlds(tlds);
+    };
+    li.appendChild(btn);
+    ul.appendChild(li);
+  }
+}
+
+async function testResolver(which) {
+  const value = $('primary').value.trim();
+  const server = which === 'secondary' ? $('secondary').value.trim() : value;
+  const out = $(which === 'secondary' ? 'secondary-result' : 'primary-result');
+  out.textContent = 'Testing…';
+  out.className = 'result';
+  try {
+    const res = await fetch('/api/resolvers/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ server })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      out.textContent = `✓ OK (${data.family === 6 ? 'IPv6' : 'IPv4'}) ${data.answers?.length || 0} answers`;
+      out.className = 'result success';
+    } else {
+      out.textContent = `✗ ${data.error || data.responseCode}`;
+      out.className = 'result failure';
+    }
+  } catch (err) {
+    out.textContent = `✗ ${err.message}`;
+    out.className = 'result failure';
+  }
+}
+
+async function saveSettings() {
+  const out = $('trust-save-result');
+  out.textContent = 'Saving…';
+  out.className = 'result';
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        primary: $('primary').value.trim(),
+        secondary: $('secondary').value.trim(),
+        useSecondary: $('useSecondary').checked,
+        icannTlds: tlds
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      out.textContent = '✓ Saved';
+      out.className = 'result success';
+      loadSettings();
+    } else {
+      out.textContent = `✗ ${data.error}`;
+      out.className = 'result failure';
+    }
+  } catch (err) {
+    out.textContent = `✗ ${err.message}`;
+    out.className = 'result failure';
+  }
+}
+
+$('test-primary').onclick = () => testResolver('primary');
+$('test-secondary').onclick = () => testResolver('secondary');
+$('save-settings').onclick = saveSettings;
+
+$('add-tld').onclick = () => {
+  const raw = $('icann-tld').value.trim().toLowerCase().replace(/^\./, '');
+  const err = $('tld-error');
+  err.textContent = '';
+  if (!/^[a-z0-9-]+$/.test(raw) || raw.includes('.')) {
+    err.textContent = 'Invalid TLD';
+    return;
+  }
+  if (!tlds.includes(raw)) tlds.push(raw);
+  renderTlds(tlds);
+  $('icann-tld').value = '';
+};
+
+loadStatus();
+loadSettings();
+setInterval(loadStatus, 10000);

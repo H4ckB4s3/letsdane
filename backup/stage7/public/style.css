@@ -1,0 +1,148 @@
+
+:root {
+  color-scheme: dark;
+  --bg: #0f1419;
+  --surface: #1a2332;
+  --border: #344256;
+  --text: #e6edf3;
+  --muted: #91a0b5;
+  --blue: #3b82f6;
+  --green: #22c55e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+header {
+  padding: 24px 5%;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+header h1 { margin: 0; }
+header p, .muted { color: var(--muted); }
+
+main {
+  max-width: 900px;
+  margin: 30px auto;
+  padding: 0 20px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.card, .section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 22px;
+  margin-bottom: 20px;
+}
+
+.card h2, .section h2 {
+  font-size: 17px;
+  margin-top: 0;
+}
+
+.card strong { color: var(--green); }
+
+.badge {
+  background: #164e35;
+  color: #86efac;
+  padding: 6px 12px;
+  border-radius: 20px;
+}
+
+label {
+  display: block;
+  margin-top: 18px;
+  margin-bottom: 6px;
+}
+
+input:not([type=checkbox]) {
+  width: 100%;
+  padding: 12px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: #101923;
+  color: white;
+  font: inherit;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+button {
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  background: #26364b;
+  color: white;
+  border-radius: 7px;
+  cursor: pointer;
+  margin-top: 12px;
+}
+
+button:hover { border-color: var(--blue); }
+button:disabled { opacity: .4; cursor: not-allowed; }
+
+button.primary {
+  background: var(--blue);
+  border-color: var(--blue);
+  font-weight: 600;
+}
+
+.test-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.result { color: var(--muted); }
+.success { color: var(--green); }
+.failure { color: #f87171; }
+
+.active-info {
+  margin-top: 20px;
+  color: var(--muted);
+}
+
+li { padding: 5px 0; }
+a { color: #60a5fa; }
+
+dl {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+dt { color: var(--muted); }
+
+footer {
+  text-align: center;
+  padding: 25px;
+  color: var(--muted);
+}
+
+@media(max-width: 550px) {
+  header { padding: 18px; }
+  dl { grid-template-columns: 1fr; }
+}

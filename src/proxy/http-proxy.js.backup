@@ -1,0 +1,100 @@
+
+import { Proxy } from 'http-mitm-proxy';
+import path from 'node:path';
+
+import { DnsResolver } from '../dns/resolver.js';
+import { DaneHttpsAgent } from '../security/dane-https-agent.js';
+
+export class DaneProxy {
+  constructor(ca, options = {}) {
+    this.ca = ca;
+
+    this.port = options.port || 8080;
+
+    this.resolver = options.resolver ||
+      new DnsResolver({
+        ...options.dns,
+        useSecondary: false
+      });
+
+    // DANE verification is mandatory.
+    this.securityVerifier = options.securityVerifier;
+
+    if (!this.securityVerifier) {
+      throw new Error('DANE verification is mandatory');
+    }
+
+    // Dedicated HTTPS agent enforcing configured-resolver DANE.
+    this.httpsAgent = new DaneHttpsAgent(
+      this.securityVerifier
+    );
+
+    this.proxy = new Proxy();
+  }
+
+  async start() {
+    // Never provide an interception certificate before
+    // successful upstream DANE verification.
+    this.proxy.onCertificateRequired = (hostname, callback) => {
+      callback(null, {
+        keyFile: null,
+        certFile: null
+      });
+    };
+
+    // Fail closed if certificate generation is requested.
+    // The agent must have successfully verified the upstream
+    // connection before interception can proceed.
+    this.proxy.onCertificateMissing = (ctx, files, callback) => {
+      const hostname = ctx.hostname;
+
+      console.error(
+        `[DANE] BLOCKED ${hostname}: certificate issuance requires successful DANE verification`
+      );
+
+      callback(
+        new Error(
+          'DANE verification required: refusing unauthenticated interception'
+        )
+      );
+    };
+
+    this.proxy.onError((ctx, error) => {
+      console.error(
+        '[Proxy]',
+        error?.message || error
+      );
+    });
+
+    this.proxy.listen({
+      port: this.port,
+      host: '127.0.0.1',
+
+      sslCaDir: path.join(
+        process.cwd(),
+        'data',
+        'ca'
+      ),
+
+      // Enforce DANE verification for outgoing HTTPS requests.
+      httpsAgent: this.httpsAgent
+    });
+
+    console.log(
+      `DANE proxy listening on 127.0.0.1:${this.port}`
+    );
+
+    console.log(
+      '[DANE] Configured-resolver trust mode enabled.'
+    );
+
+    console.log(
+      '[DANE] HTTPS agent attached to outgoing proxy connections.'
+    );
+
+    console.log(
+      '[DANE] Certificate issuance remains fail-closed.'
+    );
+  }
+}
+

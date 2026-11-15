@@ -1,0 +1,79 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { isIP } from 'node:net';
+
+const DEFAULT_ICANN_TLDS = [
+  'com', 'net', 'org', 'edu', 'gov', 'mil', 'int',
+  'io', 'co', 'app', 'dev', 'info', 'biz', 'me',
+  'tv', 'xyz', 'cloud', 'site', 'online', 'store',
+  'shop', 'tech', 'blog', 'news', 'live', 'pro',
+  'name', 'mobi', 'asia', 'eu', 'us', 'uk', 'de',
+  'fr', 'nl', 'be', 'ch', 'at', 'se', 'no', 'dk',
+  'fi', 'es', 'it', 'pt', 'pl', 'cz', 'gr', 'ru',
+  'ca', 'au', 'nz', 'jp', 'cn', 'in', 'br', 'mx'
+];
+
+const DEFAULTS = {
+  primary: '82.68.70.162',
+  secondary: '',
+  useSecondary: false,
+  timeout: 5000,
+  icannTlds: DEFAULT_ICANN_TLDS
+};
+
+function normalizeTld(value) {
+  const tld = String(value || '').trim().toLowerCase()
+    .replace(/^\./, '').replace(/\.$/, '');
+  if (!tld || tld.length > 63 || tld.includes('.') ||
+      !/^[a-z0-9-]+$/.test(tld) || tld.startsWith('-') || tld.endsWith('-')) {
+    throw new Error(`Invalid TLD: ${value}`);
+  }
+  return tld;
+}
+
+export class SettingsStore {
+  constructor(file = 'data/settings.json') {
+    this.file = path.resolve(file);
+    this.settings = this.load();
+  }
+
+  validate(input) {
+    const primary = String(input.primary || '').trim();
+    const secondary = String(input.secondary || '').trim();
+
+    if (isIP(primary) !== 4 && isIP(primary) !== 6) {
+      throw new Error('Primary resolver must be a valid IPv4 or IPv6 address');
+    }
+    if (input.useSecondary && isIP(secondary) !== 4 && isIP(secondary) !== 6) {
+      throw new Error('Secondary resolver must be a valid IPv4 or IPv6 address');
+    }
+    if (!Array.isArray(input.icannTlds)) {
+      throw new Error('icannTlds must be an array');
+    }
+
+    const icannTlds = [...new Set((input.icannTlds || []).map(normalizeTld))].sort();
+    return { primary, secondary, useSecondary: input.useSecondary === true, timeout: 5000, icannTlds };
+  }
+
+  load() {
+    if (!fs.existsSync(this.file)) return this.save(DEFAULTS);
+    const saved = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+    let icannTlds = saved.icannTlds;
+    if (!Array.isArray(icannTlds)) icannTlds = DEFAULT_ICANN_TLDS;
+    return this.validate({ ...DEFAULTS, ...saved, icannTlds });
+  }
+
+  get() {
+    return { ...this.settings, icannTlds: [...this.settings.icannTlds] };
+  }
+
+  save(input) {
+    const next = this.validate({ ...this.settings, ...input });
+    fs.mkdirSync(path.dirname(this.file), { recursive: true });
+    const temporary = `${this.file}.tmp`;
+    fs.writeFileSync(temporary, JSON.stringify(next, null, 2), { mode: 0o600 });
+    fs.renameSync(temporary, this.file);
+    this.settings = next;
+    return this.get();
+  }
+}

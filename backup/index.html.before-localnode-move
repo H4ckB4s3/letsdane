@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LetsDANE - Security Dashboard</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1>🔒 LetsDANE</h1>
+    <p>DNSSEC · Handshake · DANE security manager</p>
+  </div>
+  <span id="overall-status" class="badge">Running</span>
+</header>
+
+<main>
+  <section class="cards">
+    <article class="card">
+      <h2>Proxy</h2>
+      <strong id="proxy-status">Loading</strong>
+      <p id="proxy-address">127.0.0.1:8080</p>
+    </article>
+    <article class="card">
+      <h2>Local CA</h2>
+      <strong id="ca-status">Loading</strong>
+      <p>Private key stored locally</p>
+    </article>
+  </section>
+
+  <section class="section">
+    <h2>Certificate downloads</h2>
+    <p class="muted">
+      Import the PEM certificate into Firefox or Brave as a trusted root.
+      Both browsers use the same PEM file.
+    </p>
+    <div class="downloads">
+      <a class="download-btn primary-download" href="/api/ca/cert.pem" download>
+        <strong>.crt — for Firefox</strong>
+        <span>PEM X.509, filename letsdane-ca.crt</span>
+        <em>Download</em>
+      </a>
+      <a class="download-btn" href="/api/ca/cert.der" download>
+        <strong>.der — for Android / system</strong>
+        <span>DER X.509, filename letsdane-ca.der</span>
+        <em>Download</em>
+      </a>
+      <a class="download-btn" href="/api/ca/ca.pem" download="ca.pem">
+        <strong>.pem — for Brave</strong>
+        <span>PEM X.509, filename ca.pem</span>
+        <em>Download</em>
+      </a>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>DNS Trust &amp; Resolvers</h2>
+    <p class="muted">Configure your Handshake-aware DNS resolver.</p>
+
+    <label for="active-resolver-select">Active resolver</label>
+    <select id="active-resolver-select"></select>
+    <div class="test-row">
+      <button id="test-active">Test active</button>
+      <span id="active-result" class="result"></span>
+    </div>
+
+    <label>Add resolver</label>
+    <div class="test-row">
+      <input id="new-resolver-label" placeholder="Label (e.g. Home HSD)" autocomplete="off">
+      <input id="new-resolver-ip" placeholder="IPv4 or IPv6" autocomplete="off">
+      <button id="add-resolver">Add &amp; save</button>
+    </div>
+    <div id="resolver-error" class="result failure"></div>
+
+    <div class="toggle" style="margin-top:16px">
+      <input type="checkbox" id="useLocalNode">
+      <label for="useLocalNode">Use local hsd / hnsd node on this device</label>
+    </div>
+    <div class="test-row">
+      <input id="localNodeAddress" placeholder="127.0.0.1" autocomplete="off" style="max-width:180px">
+      <input id="localNodePort" placeholder="5350" autocomplete="off" style="max-width:100px">
+      <button id="test-local">Test local</button>
+      <span id="local-result" class="result"></span>
+    </div>
+
+    <label for="secondary">Secondary resolver (IPv4 or IPv6, optional)</label>
+    <input id="secondary" autocomplete="off" placeholder="82.68.70.163">
+    <div class="toggle">
+      <input type="checkbox" id="useSecondary">
+      <label for="useSecondary">Enable secondary resolver (failover)</label>
+    </div>
+    <div class="test-row">
+      <button id="test-secondary">Test secondary</button>
+      <span id="secondary-result" class="result"></span>
+    </div>
+
+    <div class="active-info">
+      Active resolver: <strong id="active-resolver">Not selected</strong>
+    </div>
+  
+
+  <section class="section">
+    <h2>ICANN TLDs</h2>
+    <p class="muted">
+      TLDs listed here resolve through the normal OS/ICANN DNS.
+      All other names (including Handshake names) use the configured HNS resolver.
+      Adding or removing a TLD takes effect <strong>immediately</strong> —
+      no restart required.
+    </p>
+
+    <div class="tld-add-row">
+      <input id="icann-tld" placeholder="com" autocomplete="off">
+      <button id="add-tld">Add TLD</button>
+    </div>
+    
+    <div class="tld-bulk-row">
+      <label for="bulk-tld-file" class="bulk-label">Bulk upload (CSV or one-per-line)</label>
+      <input id="bulk-tld-file" type="file" accept=".csv,.txt">
+      <button id="bulk-tld-apply">Import</button>
+      <span id="bulk-tld-result" class="result"></span>
+    </div>
+<div id="tld-error" class="result failure"></div>
+
+    <h3>Configured ICANN TLDs <span id="tld-count" class="muted"></span></h3>
+    <div id="icann-tld-list" class="tld-chips"></div>
+
+    <button id="save-settings" class="primary">Save trust configuration</button>
+    <p id="trust-save-result" class="result"></p>
+  </section>
+
+  <section class="section">
+    <h2>Security policy</h2>
+    <ul>
+      <li>ICANN TLDs: OS/ICANN resolver, standard CA validation</li>
+      <li>All other namespaces (HNS): configured resolver</li>
+      <li>DANE TLSA: mandatory when TLSA present (usage 3 / DANE-Ee)</li>
+      <li>Certificate mismatch: connection blocked</li>
+      <li>No TLSA on ICANN name: standard CA validation</li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2>CA details</h2>
+    <dl id="ca-info"></dl>
+  </section>
+
+  <section class="section">
+    <h2>Installation</h2>
+    <a href="/install.html">Firefox / Brave installation guide</a>
+  </section>
+</main>
+
+<footer>LetsDANE JS · Local dashboard</footer>
+<script src="/app.js"></script>
+</body>
+</html>

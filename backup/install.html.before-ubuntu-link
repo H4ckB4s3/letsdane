@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Installation Guide · Let's DANE</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <span class="icon">🔒</span>
+      <div>
+        <h1>Installation Guide</h1>
+        <p>Firefox &amp; Brave · Local CA only</p>
+      </div>
+    </div>
+    <a href="/" class="status-badge">← Dashboard</a>
+  </header>
+
+  <main>
+    <section class="section">
+      <h2>Download the Root CA</h2>
+      <p>From the main dashboard, download the certificate you need.</p>
+      <div class="downloads">
+        <a class="download-btn" href="/api/ca/cert.pem" download>
+          <strong>.crt — for Firefox</strong>
+          <span>PEM X.509, filename letsdane-ca.crt</span>
+          <em>Download</em>
+        </a>
+        <a class="download-btn" href="/api/ca/cert.der" download>
+          <strong>.der — for Android / system</strong>
+          <span>DER X.509, filename letsdane-ca.der</span>
+          <em>Download</em>
+        </a>
+        <a class="download-btn" href="/api/ca/ca.pem" download="ca.pem">
+          <strong>.pem — for Brave</strong>
+          <span>PEM X.509, filename ca.pem</span>
+          <em>Download</em>
+        </a>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Firefox</h2>
+      <h3>1. Import the .crt certificate</h3>
+      <ol>
+        <li>Open <a href="about:preferences#connectionSecurity">about:preferences#connectionSecurity</a></li>
+        <li>Scroll to <strong>Certificates</strong> → <strong>View Certificates…</strong></li>
+        <li>Authorities tab → <strong>Import…</strong></li>
+        <li>Select the downloaded <code>letsdane-ca.crt</code></li>
+        <li>Check <strong>“Trust this CA to identify websites”</strong> → OK</li>
+        <li><strong>Quit Firefox completely and reopen</strong></li>
+      </ol>
+
+      <h3>2. Configure the proxy</h3>
+      <ol>
+        <li>Open <a href="about:preferences#connectionSecurity">about:preferences#connectionSecurity</a></li>
+        <li>Scroll to <strong>Network Settings</strong> → <strong>Settings…</strong></li>
+        <li>Choose <strong>Manual proxy configuration</strong></li>
+        <li>HTTP Proxy: <code>127.0.0.1</code> Port <code>8080</code></li>
+        <li>Check <strong>Also use this proxy for HTTPS</strong></li>
+        <li>OK</li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <h2>Brave</h2>
+      <h3>1. Import the .pem certificate</h3>
+      <ol>
+        <li>Download the <a href="/api/ca/ca.pem" download="ca.pem">ca.pem</a> file above</li>
+        <li>Open <a href="brave://certificate-manager/">brave://certificate-manager/</a></li>
+        <li><strong>Authorities</strong> tab → <strong>Import</strong></li>
+        <li>Select <code>ca.pem</code></li>
+        <li>Check <strong>“Trust this certificate for identifying websites”</strong> → OK</li>
+        <li><strong>Quit Brave completely and reopen</strong></li>
+      </ol>
+
+      <h3>2. Configure the proxy</h3>
+      <ol>
+        <li>Open your computer's proxy settings:
+          <ul>
+            <li><a href="ms-settings:network-proxy">Windows</a></li>
+            <li><a href="x-apple.systempreferences:com.apple.Network">macOS</a></li>
+            <li>Linux: system Settings → Network → Proxy</li>
+          </ul>
+        </li>
+        <li>Turn <strong>Network Proxy</strong> ON</li>
+        <li>Set HTTP <em>and</em> HTTPS proxy to <code>127.0.0.1</code> Port <code>8080</code></li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <h2>Security reminders</h2>
+      <ul>
+        <li>The private key never leaves this machine.</li>
+        <li>Only the public certificate is downloadable.</li>
+        <li>Dashboard and proxy bind only to 127.0.0.1.</li>
+        <li>DNSSEC/TLSA failure is fail-closed (no silent fallback).</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,43 @@
+{
+  "name": "letsdane-js",
+  "version": "0.1.0",
+  "description": "Let's DANE JS - Local DANE (DNS-Based Authentication of Named Entities) security manager. Pure Node.js implementation of a local proxy for DANE-EE with DNSSEC validation.",
+  "main": "src/index.js",
+  "bin": {
+    "letsdane-js": "src/index.js"
+  },
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test test/"
+  },
+  "keywords": [
+    "dane",
+    "dnssec",
+    "tlsa",
+    "proxy",
+    "tls",
+    "security",
+    "certificate"
+  ],
+  "author": "Let's DANE JS contributors",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@relaycorp/dnssec": "^1.12.1",
+    "dns-packet": "^5.6.1",
+    "express": "^4.21.0",
+    "http-mitm-proxy": "^1.1.0",
+    "node-forge": "^1.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/buffrr/letsdane"
+  }
+}
