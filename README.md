@@ -1,9 +1,3 @@
-Copy everything below into a file named `README.md`.
-
-markdown
-
-````markdown
-
 # LetsDANE JS
 
 A local DANE (DNS-Based Authentication of Named Entities) security manager for Handshake (HNS) and ICANN namespaces, written in pure Node.js.
