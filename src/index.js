@@ -11,6 +11,7 @@ import { DnsResolver } from './dns/resolver.js';
 import { SettingsStore } from './config/settings.js';
 import { SecurityVerification } from './security/verification.js';
 import { createProxyLookup } from './security/proxy-lookup.js';
+import { patchSystemDns } from './security/patch-system-dns.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -20,10 +21,27 @@ async function main() {
   const settingsStore = new SettingsStore(path.join(__dirname, '../data/settings.json'));
   const settings = settingsStore.get();
 
-  const resolver = new DnsResolver({ ...settings, useSecondary: false });
+  const resolver = new DnsResolver({
+    activeResolver: settings.activeResolver,
+    secondary: settings.secondary,
+    useSecondary: settings.useSecondary,
+    timeout: settings.timeout,
+    useLocalNode: settings.useLocalNode,
+    localNodeAddress: settings.localNodeAddress,
+    localNodePort: settings.localNodePort
+  });
 
   console.log('\nDNS configuration');
-  console.log('HNS resolver:', settings.primary);
+  console.log('HNS resolver:', settings.activeResolver);
+  if (settings.useLocalNode) {
+    console.log('Local node:', `${settings.localNodeAddress}:${settings.localNodePort}`);
+  }
+
+  // Shadow dns.lookup globally: HNS names go to the HNS resolver,
+  // ICANN names go to the OS resolver. This is what makes http-mitm-proxy
+  // find HNS names for plain HTTP and for CONNECT targets.
+  patchSystemDns(resolver, settings.icannTlds || []);
+  console.log('[DNS] system resolver patched for HNS names');
 
   const securityVerifier = new SecurityVerification({
     resolver,

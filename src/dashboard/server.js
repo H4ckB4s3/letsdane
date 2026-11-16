@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DnsResolver } from '../dns/resolver.js';
 import { isIP } from 'node:net';
+import { DaneHttpsAgent } from '../security/dane-https-agent.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -37,7 +38,7 @@ export function createDashboard(ca, options = {}) {
         active: resolver?.activeServer || null,
         useLocalNode: resolver?.useLocalNode || false,
         localNode: resolver?.useLocalNode
-          ? (resolver.localNodeAddress + ":" + resolver.localNodePort)
+          ? (resolver.localNodeAddress + ':' + resolver.localNodePort)
           : null
       },
       security: latestSecurityResult
@@ -48,6 +49,10 @@ export function createDashboard(ca, options = {}) {
     res.json({ running: verificationRunning, result: latestSecurityResult });
   });
 
+  app.get('/api/security/recent', (req, res) => {
+    res.json({ recent: DaneHttpsAgent.recent || [] });
+  });
+
   app.post('/api/security/verify', async (req, res) => {
     if (!securityVerifier) {
       return res.status(503).json({ ok: false, error: 'Security verifier unavailable' });
@@ -55,9 +60,7 @@ export function createDashboard(ca, options = {}) {
     if (verificationRunning) {
       return res.status(409).json({ ok: false, error: 'Verification already running' });
     }
-
     const hostname = String(req.body.hostname || '').trim();
-
     if (
       !hostname ||
       hostname.length > 253 ||
@@ -67,7 +70,6 @@ export function createDashboard(ca, options = {}) {
     ) {
       return res.status(400).json({ ok: false, error: 'Invalid hostname' });
     }
-
     verificationRunning = true;
     try {
       latestSecurityResult = await securityVerifier.verify(hostname);
@@ -96,7 +98,6 @@ export function createDashboard(ca, options = {}) {
           error: 'Wait for verification to finish before changing settings'
         });
       }
-
       const saved = settingsStore.save(req.body);
 
       resolver.primary = saved.activeResolver;
@@ -109,18 +110,19 @@ export function createDashboard(ca, options = {}) {
 
       if (securityVerifier && typeof securityVerifier.setIcannTlds === 'function') {
         securityVerifier.setIcannTlds(saved.icannTlds);
-      proxyLookup?.setIcannTlds?.(saved.icannTlds);
       } else if (securityVerifier && typeof securityVerifier.setIcannDomains === 'function') {
         securityVerifier.setIcannDomains(saved.icannTlds);
-      proxyLookup?.setIcannTlds?.(saved.icannTlds);
+      }
+
+      if (typeof proxyLookup === 'function' && typeof proxyLookup.setIcannTlds === 'function') {
+        proxyLookup.setIcannTlds(saved.icannTlds);
       }
 
       latestSecurityResult = null;
-
       res.json({
         ok: true,
         settings: saved,
-        message: 'Resolver and ICANN TLD policy updated'
+        message: 'Resolver and ICANN TLD policy updated (applied immediately)'
       });
     } catch (error) {
       res.status(400).json({ ok: false, error: error.message });
@@ -129,24 +131,31 @@ export function createDashboard(ca, options = {}) {
 
   app.post('/api/resolvers/test', async (req, res) => {
     const server = String(req.body.server || '').trim();
+    const testPort = Number(req.body.port) || 53;
     const version = isIP(server);
 
     if (version !== 4 && version !== 6) {
       return res.status(400).json({ ok: false, error: 'Invalid IPv4/IPv6 address' });
     }
+    if (!Number.isInteger(testPort) || testPort < 1 || testPort > 65535) {
+      return res.status(400).json({ ok: false, error: 'Invalid port' });
+    }
 
     try {
       const testResolver = new DnsResolver({
-        primary: server,
+        activeResolver: server,
+        secondary: '',
         useSecondary: false,
-        timeout: 4000
+        useLocalNode: false,
+        timeout: 4000,
+        port: testPort
       });
-
       const response = await testResolver.query('syndicate', 'DS');
 
       res.json({
         ok: response.rcode === 'NOERROR',
         server,
+        port: testPort,
         family: version,
         responseCode: response.rcode,
         answers: (response.answers || []).map(r => ({
@@ -156,7 +165,7 @@ export function createDashboard(ca, options = {}) {
         }))
       });
     } catch (error) {
-      res.status(502).json({ ok: false, server, error: error.message });
+      res.status(502).json({ ok: false, server, port: testPort, error: error.message });
     }
   });
 
@@ -164,6 +173,16 @@ export function createDashboard(ca, options = {}) {
     try {
       res.setHeader('Content-Type', 'application/x-pem-file');
       res.setHeader('Content-Disposition', 'attachment; filename="letsdane-ca.crt"');
+      res.send(ca.getPublicCertPem());
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/ca/ca.pem', (req, res) => {
+    try {
+      res.setHeader('Content-Type', 'application/x-pem-file');
+      res.setHeader('Content-Disposition', 'attachment; filename="ca.pem"');
       res.send(ca.getPublicCertPem());
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -186,18 +205,6 @@ export function createDashboard(ca, options = {}) {
 
   app.get('/api/health', (req, res) => {
     res.json({ ok: true, timestamp: new Date().toISOString() });
-  });
-
-  // Serve the same CA cert with filename="ca.pem" — for users
-  // who want the file literally named ca.pem (Brave, manual tools).
-  app.get("/api/ca/ca.pem", (req, res) => {
-    try {
-      res.setHeader("Content-Type", "application/x-pem-file");
-      res.setHeader("Content-Disposition", "attachment; filename=\"ca.pem\"");
-      res.send(ca.getPublicCertPem());
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
   });
 
   const server = app.listen(port, '127.0.0.1', () => {

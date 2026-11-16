@@ -8,22 +8,34 @@ function setText(id, value) {
   if (el) el.textContent = value;
 }
 
+function updateActiveLabel() {
+  const el = $('active-resolver');
+  if (!el) {
+    console.warn('[ui] #active-resolver element not found');
+    return;
+  }
+  const s = settings || {};
+  let value;
+  if (s.useLocalNode) {
+    const addr = s.localNodeAddress || '127.0.0.1';
+    const p = s.localNodePort || 5350;
+    value = `local (${addr}:${p})`;
+  } else {
+    value = s.activeResolver || '82.68.70.162';
+  }
+  el.textContent = value;
+  console.log('[ui] active label =', value);
+}
+
 async function loadStatus() {
   try {
     const res = await fetch('/api/status');
     if (!res.ok) throw new Error(`/api/status ${res.status}`);
     const data = await res.json();
-
     setText('proxy-status', data?.proxy?.status === 'active' ? 'Active' : 'Stopped');
     setText('proxy-address', data?.proxy?.address || '127.0.0.1:8080');
     setText('ca-status', data?.ca?.ready ? 'Ready' : 'Not ready');
-
-    const active =
-      data?.resolver?.active ||
-      data?.resolver?.primary ||
-      '82.68.70.162';
-    setText('active-resolver', active);
-
+    if (settings) updateActiveLabel();
     if (data?.ca?.ready) {
       const el = $('ca-info');
       if (el) el.innerHTML = `
@@ -45,23 +57,17 @@ async function loadSettings() {
     if (!res.ok) throw new Error(`/api/settings ${res.status}`);
     settings = await res.json();
 
-    // Normalize to expected shape even if the server sent old fields
-    settings.activeResolver =
-      settings.activeResolver ||
-      settings.primary ||
-      '82.68.70.162';
-
+    settings.activeResolver = settings.activeResolver || settings.primary || '82.68.70.162';
     settings.resolverProfiles =
       Array.isArray(settings.resolverProfiles) && settings.resolverProfiles.length
         ? settings.resolverProfiles
         : [{ label: 'Handshake resolver', ip: '82.68.70.162' }];
-
     settings.localNodeAddress = settings.localNodeAddress || '127.0.0.1';
-    settings.localNodePort    = settings.localNodePort    || 5350;
-    settings.useLocalNode     = !!settings.useLocalNode;
-    settings.useSecondary     = !!settings.useSecondary;
-    settings.secondary        = settings.secondary || '';
-    settings.icannTlds        = Array.isArray(settings.icannTlds) ? settings.icannTlds : [];
+    settings.localNodePort = settings.localNodePort || 5350;
+    settings.useLocalNode = !!settings.useLocalNode;
+    settings.useSecondary = !!settings.useSecondary;
+    settings.secondary = settings.secondary || '';
+    settings.icannTlds = Array.isArray(settings.icannTlds) ? settings.icannTlds : [];
 
     const sel = $('active-resolver-select');
     if (sel) {
@@ -75,15 +81,14 @@ async function loadSettings() {
       }
     }
 
-    setText('active-resolver', settings.activeResolver);
-
-    const sec = $('secondary');   if (sec) sec.value = settings.secondary;
-    const us  = $('useSecondary');if (us)  us.checked  = settings.useSecondary;
-    const ln  = $('useLocalNode');if (ln)  ln.checked  = settings.useLocalNode;
-    const la  = $('localNodeAddress'); if (la) la.value = settings.localNodeAddress;
-    const lp  = $('localNodePort');    if (lp) lp.value = settings.localNodePort;
+    const sec = $('secondary'); if (sec) sec.value = settings.secondary;
+    const us = $('useSecondary'); if (us) us.checked = settings.useSecondary;
+    const ln = $('useLocalNode'); if (ln) ln.checked = settings.useLocalNode;
+    const la = $('localNodeAddress'); if (la) la.value = settings.localNodeAddress;
+    const lp = $('localNodePort'); if (lp) lp.value = settings.localNodePort;
 
     renderTlds(settings.icannTlds);
+    updateActiveLabel();
   } catch (err) {
     console.error('[settings]', err);
   }
@@ -110,27 +115,33 @@ function renderTlds(list) {
   if (c) c.textContent = `(${tlds.length})`;
 }
 
+async function persistSettings(override) {
+  const payload = {
+    activeResolver: $('active-resolver-select')?.value || settings.activeResolver,
+    resolverProfiles: settings.resolverProfiles,
+    secondary: $('secondary')?.value.trim() || '',
+    useSecondary: !!$('useSecondary')?.checked,
+    useLocalNode: !!$('useLocalNode')?.checked,
+    localNodeAddress: $('localNodeAddress')?.value.trim() || '127.0.0.1',
+    localNodePort: Number($('localNodePort')?.value) || 5350,
+    icannTlds: tlds,
+    ...(override || {})
+  };
+  const res = await fetch('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return res.json();
+}
+
 async function saveAll() {
   const out = $('trust-save-result');
   if (!out) return;
   out.textContent = 'Saving…';
   out.className = 'result';
   try {
-    const res = await fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        activeResolver: $('active-resolver-select')?.value || settings.activeResolver,
-        resolverProfiles: settings.resolverProfiles,
-        secondary: $('secondary')?.value.trim() || '',
-        useSecondary: !!$('useSecondary')?.checked,
-        useLocalNode: !!$('useLocalNode')?.checked,
-        localNodeAddress: $('localNodeAddress')?.value.trim() || '127.0.0.1',
-        localNodePort: Number($('localNodePort')?.value) || 5350,
-        icannTlds: tlds
-      })
-    });
-    const data = await res.json();
+    const data = await persistSettings();
     if (data.ok) {
       out.textContent = '✓ Saved and applied immediately';
       out.className = 'result success';
@@ -145,7 +156,7 @@ async function saveAll() {
   }
 }
 
-async function testServer(server, outId) {
+async function testServer(server, outId, port) {
   const out = $(outId);
   if (!out) return;
   if (!server) { out.textContent = 'No address'; out.className = 'result failure'; return; }
@@ -155,7 +166,7 @@ async function testServer(server, outId) {
     const res = await fetch('/api/resolvers/test', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ server })
+      body: JSON.stringify({ server, port })
     });
     const data = await res.json();
     if (data.ok) {
@@ -205,10 +216,53 @@ async function loadRecent() {
 function wire() {
   const on = (id, ev, fn) => { const el = $(id); if (el) el[ev] = fn; };
 
-  on('test-active',    'onclick', () => testServer($('active-resolver-select')?.value, 'active-result'));
+  on('test-active', 'onclick', () => testServer($('active-resolver-select')?.value, 'active-result'));
   on('test-secondary', 'onclick', () => testServer($('secondary')?.value.trim(), 'secondary-result'));
-  on('test-local',     'onclick', () => testServer($('localNodeAddress')?.value.trim(), 'local-result'));
-  on('save-settings',  'onclick', saveAll);
+  on('test-local', 'onclick', () =>
+    testServer($('localNodeAddress')?.value.trim(), 'local-result', Number($('localNodePort')?.value) || 5350));
+  on('save-settings', 'onclick', saveAll);
+
+  // AUTOSAVE: local node checkbox
+  const localCb = $('useLocalNode');
+  if (localCb) {
+    localCb.addEventListener('change', async () => {
+      const status = $('local-result');
+      if (status) { status.textContent = 'Saving…'; status.className = 'result'; }
+      try {
+        const data = await persistSettings({ useLocalNode: !!localCb.checked });
+        if (data.ok) {
+          if (status) { status.textContent = '✓ Saved'; status.className = 'result success'; }
+          await loadSettings();
+        } else if (status) {
+          status.textContent = '✗ ' + data.error;
+          status.className = 'result failure';
+        }
+      } catch (e) {
+        if (status) { status.textContent = '✗ ' + e.message; status.className = 'result failure'; }
+      }
+    });
+  }
+
+  // AUTOSAVE: active resolver dropdown
+  const sel = $('active-resolver-select');
+  if (sel) {
+    sel.addEventListener('change', async () => {
+      const status = $('active-result');
+      if (status) { status.textContent = 'Saving…'; status.className = 'result'; }
+      try {
+        const data = await persistSettings({ activeResolver: sel.value });
+        if (data.ok) {
+          if (status) { status.textContent = '✓ Saved'; status.className = 'result success'; }
+          await loadSettings();
+        } else if (status) {
+          status.textContent = '✗ ' + data.error;
+          status.className = 'result failure';
+        }
+      } catch (e) {
+        if (status) { status.textContent = '✗ ' + e.message; status.className = 'result failure'; }
+      }
+    });
+  }
 
   on('add-resolver', 'onclick', async () => {
     const label = $('new-resolver-label')?.value.trim();
@@ -221,17 +275,7 @@ function wire() {
     }
     settings.resolverProfiles.push({ label, ip });
     try {
-      const res = await fetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...settings,
-          activeResolver: ip,
-          resolverProfiles: settings.resolverProfiles,
-          icannTlds: tlds
-        })
-      });
-      const data = await res.json();
+      const data = await persistSettings({ activeResolver: ip, resolverProfiles: settings.resolverProfiles });
       if (data.ok) {
         if ($('new-resolver-label')) $('new-resolver-label').value = '';
         if ($('new-resolver-ip')) $('new-resolver-ip').value = '';
@@ -282,9 +326,32 @@ function wire() {
       out.className = invalid.length ? 'result success-with-warnings' : 'result success';
     };
   }
+
+  const restartBtn = $('restart-btn');
+  if (restartBtn) {
+    restartBtn.onclick = async () => {
+      if (!confirm('Restart letsdane?')) return;
+      restartBtn.disabled = true;
+      const status = $('restart-status');
+      if (status) { status.textContent = 'Restarting…'; status.className = 'result'; }
+      try {
+        const res = await fetch('/api/system/restart', { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          if (status) { status.textContent = 'Restarting — reloading in 3s…'; status.className = 'result success'; }
+          setTimeout(() => location.reload(), 3000);
+        } else {
+          if (status) { status.textContent = 'Error: ' + data.error; status.className = 'result failure'; }
+          restartBtn.disabled = false;
+        }
+      } catch (e) {
+        if (status) { status.textContent = 'Restart failed: ' + e.message; status.className = 'result failure'; }
+        restartBtn.disabled = false;
+      }
+    };
+  }
 }
 
-// Run: DOM may already be ready when this script loads at the bottom of <body>
 function init() {
   wire();
   loadStatus();

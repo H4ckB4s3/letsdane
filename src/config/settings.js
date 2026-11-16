@@ -18,8 +18,8 @@ const DEFAULT_RESOLVER_PROFILE = { label: 'Handshake resolver', ip: '82.68.70.16
 const DEFAULTS = {
   activeResolver: DEFAULT_RESOLVER_PROFILE.ip,
   resolverProfiles: [DEFAULT_RESOLVER_PROFILE],
-  useSecondary: false,
   secondary: '',
+  useSecondary: false,
   timeout: 5000,
   useLocalNode: false,
   localNodeAddress: '127.0.0.1',
@@ -53,28 +53,26 @@ export class SettingsStore {
   }
 
   validate(input) {
-    // Resolver profiles
     if (!Array.isArray(input.resolverProfiles) || !input.resolverProfiles.length) {
       throw new Error('At least one resolver profile is required');
     }
     const profiles = input.resolverProfiles.map(normalizeProfile);
 
-    // The default must always be present and selectable
-    const hasDefault = profiles.some(p => p.ip === DEFAULT_RESOLVER_PROFILE.ip);
-    if (!hasDefault) profiles.unshift({ ...DEFAULT_RESOLVER_PROFILE });
+    // The default IP must always be present in the saved list
+    if (!profiles.some(p => p.ip === DEFAULT_RESOLVER_PROFILE.ip)) {
+      profiles.unshift({ ...DEFAULT_RESOLVER_PROFILE });
+    }
 
-    // Active resolver must exist in profiles (or fall back to default)
-    const active = String(input.activeResolver || '').trim();
-    const activeExists = profiles.some(p => p.ip === active);
-    const activeResolver = activeExists ? active : profiles[0].ip;
+    const activeCandidate = String(input.activeResolver || '').trim();
+    const activeResolver = profiles.some(p => p.ip === activeCandidate)
+      ? activeCandidate
+      : profiles[0].ip;
 
-    // Secondary
     const secondary = String(input.secondary || '').trim();
     if (input.useSecondary && isIP(secondary) !== 4 && isIP(secondary) !== 6) {
       throw new Error('Secondary resolver must be a valid IPv4 or IPv6 address');
     }
 
-    // Local node
     const localAddr = String(input.localNodeAddress || '127.0.0.1').trim();
     if (isIP(localAddr) !== 4 && isIP(localAddr) !== 6) {
       throw new Error('Local node address must be IPv4 or IPv6');
@@ -84,15 +82,14 @@ export class SettingsStore {
       throw new Error('Local node port must be 1–65535');
     }
 
-    // TLDs
     if (!Array.isArray(input.icannTlds)) throw new Error('icannTlds must be an array');
     const icannTlds = [...new Set(input.icannTlds.map(normalizeTld))].sort();
 
     return {
       activeResolver,
       resolverProfiles: profiles,
-      useSecondary: input.useSecondary === true,
       secondary,
+      useSecondary: input.useSecondary === true,
       timeout: 5000,
       useLocalNode: input.useLocalNode === true,
       localNodeAddress: localAddr,
@@ -102,26 +99,72 @@ export class SettingsStore {
   }
 
   load() {
-    if (!fs.existsSync(this.file)) return this.save(DEFAULTS);
-    const saved = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-
-    // Migration: old shape → new shape
-    const migrated = { ...DEFAULTS, ...saved };
-
-    // Old primary field becomes the active resolver + default profile
-    if (saved.primary && !saved.resolverProfiles) {
-      migrated.resolverProfiles = [
-        DEFAULT_RESOLVER_PROFILE,
-        { label: 'Custom', ip: saved.primary }
-      ].filter((p, i, arr) => arr.findIndex(q => q.ip === p.ip) === i);
-      migrated.activeResolver = saved.primary;
+    if (!fs.existsSync(this.file)) {
+      return this.writeAndReturn(this.validate(DEFAULTS));
     }
 
+    let saved;
+    try {
+      saved = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+    } catch (e) {
+      console.warn('[settings] corrupt settings file, using defaults:', e.message);
+      return this.writeAndReturn(this.validate(DEFAULTS));
+    }
+
+    // Migrate old schema → new schema
+    const migrated = { ...DEFAULTS, ...saved };
+
+    if (saved.primary && !saved.resolverProfiles) {
+      // Old single-resolver shape
+      const existing = Array.isArray(saved.resolverProfiles) ? saved.resolverProfiles : [];
+      migrated.resolverProfiles = [
+        DEFAULT_RESOLVER_PROFILE,
+        { label: 'Custom', ip: saved.primary },
+        ...existing
+      ].filter((p, i, arr) =>
+        arr.findIndex(q => q.ip === String(p.ip || '').trim()) === i
+      );
+      migrated.activeResolver = saved.primary;
+      delete migrated.primary;
+    }
+
+    if (!Array.isArray(migrated.resolverProfiles) || !migrated.resolverProfiles.length) {
+      migrated.resolverProfiles = [DEFAULT_RESOLVER_PROFILE];
+    }
     if (!Array.isArray(migrated.icannTlds) || !migrated.icannTlds.length) {
       migrated.icannTlds = DEFAULT_ICANN_TLDS;
     }
 
-    return this.validate(migrated);
+    const normalized = this.validate(migrated);
+    const normalizedJson = JSON.stringify(normalized, null, 2);
+    const existingJson = JSON.stringify(saved, null, 2);
+
+    // Always rewrite if the disk copy differs from the normalized shape
+    if (normalizedJson !== existingJson) {
+      try {
+        const tmp = `${this.file}.tmp`;
+        fs.mkdirSync(path.dirname(this.file), { recursive: true });
+        fs.writeFileSync(tmp, normalizedJson, { mode: 0o600 });
+        fs.renameSync(tmp, this.file);
+        console.log('[settings] migrated on-disk settings to current schema');
+      } catch (e) {
+        console.warn('[settings] could not persist migration:', e.message);
+      }
+    }
+
+    return normalized;
+  }
+
+  writeAndReturn(next) {
+    try {
+      fs.mkdirSync(path.dirname(this.file), { recursive: true });
+      const tmp = `${this.file}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
+      fs.renameSync(tmp, this.file);
+    } catch (e) {
+      console.warn('[settings] initial write failed:', e.message);
+    }
+    return next;
   }
 
   get() {

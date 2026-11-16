@@ -20,18 +20,29 @@ export class DnsResolver {
     this.localNodeAddress = options.localNodeAddress || '127.0.0.1';
     this.localNodePort = Number(options.localNodePort) || 5350;
     this.activeServer = null;
+    this.verbose = options.verbose !== false;
+
+    // Track local node health so we don't stall every query if it's dead
+    this._localNodeDead = false;
+    this._localNodeRetryAt = 0;
   }
 
-  // Ordered list of {address, port, label} to try
   get targets() {
     const list = [];
+
     if (this.useLocalNode) {
-      list.push({
-        address: this.localNodeAddress,
-        port: this.localNodePort,
-        label: `local (${this.localNodeAddress}:${this.localNodePort})`
-      });
+      // Only skip local if it recently failed hard
+      const now = Date.now();
+      if (!this._localNodeDead || now >= this._localNodeRetryAt) {
+        list.push({
+          address: this.localNodeAddress,
+          port: this.localNodePort,
+          label: `local(${this.localNodeAddress}:${this.localNodePort})`,
+          isLocal: true
+        });
+      }
     }
+
     list.push({ address: this.primary, port: this.port, label: this.primary });
     if (this.useSecondary && this.secondary) {
       list.push({ address: this.secondary, port: this.port, label: this.secondary });
@@ -39,7 +50,6 @@ export class DnsResolver {
     return list;
   }
 
-  // Kept for backwards compat — "servers" is just address list
   get servers() {
     return this.targets.map(t => t.address);
   }
@@ -71,8 +81,12 @@ export class DnsResolver {
     let lastError;
 
     for (const target of this.targets) {
+      const start = Date.now();
+      // Local node gets a fast timeout so we don't stall on a dead hnsd
+      const effectiveTimeout = target.isLocal ? 800 : this.timeout;
+
       try {
-        const response = await this.sendQuery(target.address, target.port, packet, id);
+        const response = await this.sendQuery(target.address, target.port, packet, id, effectiveTimeout);
         const decoded = dnsPacket.decode(response);
         const question = decoded.questions?.[0];
 
@@ -91,25 +105,52 @@ export class DnsResolver {
           throw new Error('Truncated DNS response');
         }
 
+        if (target.isLocal) {
+          this._localNodeDead = false;
+        }
+
         this.activeServer = target.label;
+
+        if (this.verbose) {
+          const n = decoded.answers?.length || 0;
+          console.log(
+            `[DNS] ${typeName} ${normalizedName} via ${target.label} → ` +
+            `${decoded.rcode}, ${n} answer(s), ${Date.now() - start}ms`
+          );
+        }
+
         return response;
       } catch (error) {
         lastError = error;
-        console.warn(`[DNS] ${target.label} failed: ${error.message}`);
+
+        if (target.isLocal) {
+          this._localNodeDead = true;
+          this._localNodeRetryAt = Date.now() + 60_000; // retry in 60s
+          console.warn(
+            `[DNS] local node failed (${error.message}) — using primary for next 60s`
+          );
+        }
+
+        if (this.verbose) {
+          console.warn(
+            `[DNS] ${typeName} ${normalizedName} via ${target.label} FAILED ` +
+            `(${Date.now() - start}ms): ${error.message}`
+          );
+        }
       }
     }
 
     throw new Error(`All DNS targets failed: ${lastError?.message}`);
   }
 
-  sendQuery(address, port, packet, id) {
+  sendQuery(address, port, packet, id, timeout = this.timeout) {
     return new Promise((resolve, reject) => {
       const family = address.includes(':') ? 'udp6' : 'udp4';
       const socket = dgram.createSocket(family);
       const timer = setTimeout(() => {
         socket.close();
         reject(new Error('DNS timeout'));
-      }, this.timeout);
+      }, timeout);
 
       socket.once('error', error => {
         clearTimeout(timer);
@@ -151,8 +192,6 @@ export class DnsResolver {
       candidates.push(`*.${label}.${parent}`);
     }
 
-    let sawExact = false;
-
     for (const name of candidates) {
       let response;
       try { response = await this.query(name, 'TLSA'); }
@@ -162,16 +201,9 @@ export class DnsResolver {
       if (response.rcode !== 'NOERROR') continue;
 
       const tlsa = (response.answers || []).filter(r => r.type === 'TLSA');
-
-      if (name === candidates[0]) {
-        sawExact = true;
-        if (tlsa.length) return tlsa.map(r => ({ ...r, lookupName: name }));
-        continue;
-      }
-
       if (tlsa.length) return tlsa.map(r => ({ ...r, lookupName: name }));
     }
 
-    return sawExact ? [] : [];
+    return [];
   }
 }

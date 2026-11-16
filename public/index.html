@@ -16,6 +16,11 @@
 </header>
 
 <main>
+  <div class="toolbar">
+    <button id="restart-btn" class="primary">↻ Restart proxy</button>
+    <span id="restart-status" class="result"></span>
+  </div>
+
   <section class="cards">
     <article class="card">
       <h2>Proxy</h2>
@@ -31,12 +36,9 @@
 
   <section class="section">
     <h2>Certificate downloads</h2>
-    <p class="muted">
-      Import the PEM certificate into Firefox or Brave as a trusted root.
-      Both browsers use the same PEM file.
-    </p>
+    <p class="muted">Import the .crt into Firefox or the .pem into Brave.</p>
     <div class="downloads">
-      <a class="download-btn primary-download" href="/api/ca/cert.pem" download>
+      <a class="download-btn" href="/api/ca/cert.pem" download>
         <strong>.crt — for Firefox</strong>
         <span>PEM X.509, filename letsdane-ca.crt</span>
         <em>Download</em>
@@ -98,14 +100,55 @@
     <div class="active-info">
       Active resolver: <strong id="active-resolver">82.68.70.162</strong>
     </div>
-  
+  </section>
+
+  <section class="section">
+    <h2>ICANN TLDs</h2>
+    <p class="muted">
+      TLDs listed here resolve through the normal OS/ICANN DNS.
+      All other names (including Handshake names) use the configured HNS resolver.
+      Adding or removing a TLD takes effect <strong>immediately</strong> — no restart required.
+    </p>
+
+    <div class="tld-add-row">
+      <input id="icann-tld" placeholder="com" autocomplete="off">
+      <button id="add-tld">Add TLD</button>
+    </div>
+    <div id="tld-error" class="result failure"></div>
+
+    <div class="tld-bulk-row">
+      <label for="bulk-tld-file" class="bulk-label">Bulk upload (CSV or one-per-line)</label>
+      <input id="bulk-tld-file" type="file" accept=".csv,.txt">
+      <button id="bulk-tld-apply">Import</button>
+      <span id="bulk-tld-result" class="result"></span>
+    </div>
+
+    <h3>Configured ICANN TLDs <span id="tld-count" class="muted"></span></h3>
+    <div id="icann-tld-list" class="tld-chips"></div>
+
+    <button id="save-settings" class="primary">Save trust configuration</button>
+    <p id="trust-save-result" class="result"></p>
+  </section>
+
+  <section class="section">
+    <h2>Live verification</h2>
+    <p class="muted">Recent DANE verifications from the running proxy. Updates every 3 seconds.</p>
+    <table class="recent-table">
+      <thead>
+        <tr><th>Time</th><th>Host</th><th>Result</th><th>Details</th></tr>
+      </thead>
+      <tbody id="recent-verifications">
+        <tr><td colspan="4" class="muted">No verifications yet.</td></tr>
+      </tbody>
+    </table>
+  </section>
 
   <section class="section">
     <h2>Security policy</h2>
     <ul>
       <li>ICANN TLDs: OS/ICANN resolver, standard CA validation</li>
       <li>All other namespaces (HNS): configured resolver</li>
-      <li>DANE TLSA: mandatory when TLSA present (usage 3 / DANE-Ee)</li>
+      <li>DANE TLSA: mandatory when TLSA present (usage 3 / DANE-EE)</li>
       <li>Certificate mismatch: connection blocked</li>
       <li>No TLSA on ICANN name: standard CA validation</li>
     </ul>
